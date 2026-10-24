@@ -52,13 +52,22 @@ dsh-worker run \
   --file ./spec.md \
   --wait
 
-# 3. 单独向指定会话发送提示词
-dsh-worker prompt <sessionId> "请继续检查代码质量" --wait
+# 3. 工作区文件透视与核验（免猜测直读工作区源码）
+dsh-worker files <sessionId>               # 列出工作区根目录文件
+dsh-worker files <sessionId> src           # 列出指定子目录
+dsh-worker cat <sessionId> src/main.py     # 读取代码文件（支持 --offset 和 --limit）
 
-# 4. 查看会话状态与 Token 统计
+# 4. 会话全景透视（查看 Plan 规划步骤、Todos 清单、Token 详细消耗）
+dsh-worker details <sessionId>
+
+# 5. 终端环境与可用 Shell 感知
+dsh-worker terminals <sessionId>
+
+# 6. 后台长任务强行终止（防死锁 / 释放资源）
+dsh-worker kill-job <sessionId> <jobId>
+
+# 7. 查看会话状态与工具执行日志
 dsh-worker status <sessionId>
-
-# 5. 查看会话工具执行详情
 dsh-worker logs <sessionId> --limit 20
 ```
 

@@ -299,4 +299,106 @@ export class DSHClient {
 
     throw new Error(`Session ${sessionId} timed out after ${timeoutMs}ms`);
   }
+
+  /**
+   * 获取指定会话绑定的工作区根目录
+   */
+  async getWorkspaceRoot(sessionId) {
+    const proj = await this.getProjections(sessionId);
+    return proj.values?.workingDirectory || '';
+  }
+
+  /**
+   * 解析工作区内的文件路径（支持相对路径与绝对路径）
+   */
+  async resolveWorkspaceFilePath(sessionId, targetPath = '') {
+    const root = await this.getWorkspaceRoot(sessionId);
+    if (!targetPath || targetPath === '.' || targetPath === '/') {
+      return root;
+    }
+    if (path.posix.isAbsolute(targetPath)) {
+      return targetPath;
+    }
+    return path.posix.join(root, targetPath);
+  }
+
+  /**
+   * 列出工作区指定目录下的文件与子目录
+   */
+  async listWorkspaceFiles(sessionId, targetPath = '') {
+    const fullPath = await this.resolveWorkspaceFilePath(sessionId, targetPath);
+    const res = await this.callRpc('workspaceFiles/list', {
+      workspaceFileScopeId: sessionId,
+      path: fullPath
+    });
+    return {
+      workspaceRoot: await this.getWorkspaceRoot(sessionId),
+      path: res.path || fullPath,
+      entries: res.entries || [],
+      truncated: Boolean(res.truncated)
+    };
+  }
+
+  /**
+   * 读取工作区指定文件的内容
+   */
+  async readWorkspaceFile(sessionId, filePath, options = {}) {
+    const { offset = 1, limit = 200 } = options;
+    const fullPath = await this.resolveWorkspaceFilePath(sessionId, filePath);
+    const res = await this.callRpc('workspaceFiles/read', {
+      workspaceFileScopeId: sessionId,
+      path: fullPath,
+      range: { offset, limit }
+    });
+    return res;
+  }
+
+  /**
+   * 列出指定会话的终端列表与环境
+   */
+  async getTerminalInfo(sessionId) {
+    const [terminals, shells, env] = await Promise.all([
+      this.callRpc('terminal/list', { sessionId }).catch(() => []),
+      this.callRpc('terminal/shells', { agentId: sessionId }).catch(() => []),
+      this.callRpc('terminal/environment', { agentId: sessionId }).catch(() => ({}))
+    ]);
+    return {
+      terminals: terminals || [],
+      shells: shells || [],
+      environment: env || {}
+    };
+  }
+
+  /**
+   * 终止会话下运行的后台任务
+   */
+  async killJob(sessionId, jobId) {
+    const res = await this.callRpc('job/kill', {
+      request: { sessionId, jobId }
+    });
+    return res;
+  }
+
+  /**
+   * 获取会话全景详情（工作目录、待办列表、规划步骤、上下文压力、Token 详情等）
+   */
+  async getSessionDetails(sessionId) {
+    const proj = await this.getProjections(sessionId);
+    const v = proj.values || {};
+    return {
+      sessionId,
+      title: v.title || '',
+      goal: v.goal || null,
+      workingDirectory: v.workingDirectory || '',
+      todos: v.todos || [],
+      plan: v.plan || null,
+      tokenUsage: v.tokenUsage || null,
+      contextPressure: v.contextPressure || null,
+      sessionStats: v.sessionStats || null,
+      agentPreset: v.agentPreset || null,
+      subagent: v.subagent || null,
+      agentTeam: v.agentTeam || null,
+      userQuestions: v.userQuestions || []
+    };
+  }
 }

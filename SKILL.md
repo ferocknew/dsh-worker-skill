@@ -53,7 +53,32 @@ node bin/dsh-worker.js upload <session-id> /path/to/file.md
 node bin/dsh-worker.js prompt <session-id> "请阅读附件内容并总结" --file /path/to/file.md --wait
 ```
 
-#### 查询会话状态与进度
+#### 工作区文件透视与核验（免猜测直读工作区源码）
+```bash
+# 列出工作区根目录
+node bin/dsh-worker.js files <session-id>
+# 列出指定子目录
+node bin/dsh-worker.js files <session-id> src
+# 直读修改后的代码文件
+node bin/dsh-worker.js cat <session-id> src/service/mem/entity.py --limit 100
+```
+
+#### 查看会话全景详情（Todos、Plan、Token 消耗、压力指数）
+```bash
+node bin/dsh-worker.js details <session-id>
+```
+
+#### 查询终端环境与可用 Shell
+```bash
+node bin/dsh-worker.js terminals <session-id>
+```
+
+#### 终止会话下的后台卡死任务
+```bash
+node bin/dsh-worker.js kill-job <session-id> <job-id>
+```
+
+#### 查询会话基础状态与进度
 ```bash
 node bin/dsh-worker.js status <session-id>
 ```

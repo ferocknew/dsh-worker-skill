@@ -14,7 +14,12 @@ Usage:
   dsh-worker prompt <session-id> <prompt-text> [--file <path>] [--wait] [--json]
   dsh-worker run --workspace <path> --prompt <text> [--file <path>] [--wait] [--json]
   dsh-worker status <session-id> [--json]
+  dsh-worker details <session-id> [--json]
   dsh-worker logs <session-id> [--limit <n>] [--json]
+  dsh-worker files <session-id> [path] [--json]
+  dsh-worker cat <session-id> <file-path> [--offset <n>] [--limit <n>] [--json]
+  dsh-worker terminals <session-id> [--json]
+  dsh-worker kill-job <session-id> <job-id> [--json]
 
 Options:
   --host        DSH Host (default: $DSH_HOST or http://localhost:53080)
@@ -22,6 +27,8 @@ Options:
   --json        Output raw JSON response
   --wait        Wait for agent execution to complete
   --file        Attach a local file to the session prompt
+  --offset      Line offset for reading files (default: 1)
+  --limit       Line limit for reading files or logs (default: 200/20)
   --help, -h    Show this help message
 `;
 
@@ -46,6 +53,7 @@ async function main() {
       workspace: { type: 'string' },
       prompt: { type: 'string' },
       limit: { type: 'string' },
+      offset: { type: 'string' },
       wait: { type: 'boolean', default: false },
       json: { type: 'boolean', default: false }
     },
@@ -222,6 +230,105 @@ async function main() {
           console.log(`Running: ${vals.running !== false}`);
           console.log(`Turns: ${stats.turns || 0}, Steps: ${stats.steps || 0}`);
           console.log(`Tokens: ${stats.decodeTokens || 0}`);
+        }
+        break;
+      }
+
+      case 'details': {
+        const sessionId = positionals[0];
+        if (!sessionId) throw new Error('Usage: dsh-worker details <session-id>');
+        const details = await client.getSessionDetails(sessionId);
+        if (values.json) {
+          console.log(JSON.stringify(details, null, 2));
+        } else {
+          console.log(`=== Session Full Details: ${sessionId} ===`);
+          console.log(`Title: ${details.title || 'untitled'}`);
+          console.log(`Goal: ${details.goal || 'none'}`);
+          console.log(`Workspace CWD: ${details.workingDirectory}`);
+          console.log(`Stats: Steps: ${details.sessionStats?.steps || 0}, Turns: ${details.sessionStats?.turns || 0}, Tokens: ${details.sessionStats?.decodeTokens || 0}`);
+          console.log(`Context Pressure: ${JSON.stringify(details.contextPressure || {})}`);
+          if (details.todos && details.todos.length > 0) {
+            console.log('\n--- Todos ---');
+            for (const t of details.todos) {
+              console.log(` [${t.completed ? 'x' : ' '}] ${t.content || t.title}`);
+            }
+          }
+          if (details.plan && details.plan.steps) {
+            console.log('\n--- Plan Steps ---');
+            for (const s of details.plan.steps) {
+              console.log(` - ${s.title || s.description}`);
+            }
+          }
+        }
+        break;
+      }
+
+      case 'files': {
+        const sessionId = positionals[0];
+        const subPath = positionals[1] || '';
+        if (!sessionId) throw new Error('Usage: dsh-worker files <session-id> [path]');
+        const res = await client.listWorkspaceFiles(sessionId, subPath);
+        if (values.json) {
+          console.log(JSON.stringify(res, null, 2));
+        } else {
+          console.log(`=== Workspace Files (${sessionId}) ===`);
+          console.log(`Root: ${res.workspaceRoot}`);
+          console.log(`Target: ${res.path || '.'}\n`);
+          for (const item of res.entries) {
+            const icon = item.type === 'directory' ? '📁' : '📄';
+            const size = item.size !== undefined ? `(${item.size} bytes)` : '';
+            console.log(`${icon} ${item.name.padEnd(30)} ${size}`);
+          }
+        }
+        break;
+      }
+
+      case 'cat': {
+        const sessionId = positionals[0];
+        const targetFile = positionals[1];
+        if (!sessionId || !targetFile) throw new Error('Usage: dsh-worker cat <session-id> <file-path> [--offset <n>] [--limit <n>]');
+        const offset = parseInt(values.offset || '1', 10);
+        const limit = parseInt(values.limit || '200', 10);
+        const fileRes = await client.readWorkspaceFile(sessionId, targetFile, { offset, limit });
+        if (values.json) {
+          console.log(JSON.stringify(fileRes, null, 2));
+        } else {
+          console.log(`=== File: ${fileRes.absolutePath} (lines ${fileRes.offset}-${fileRes.offset + (fileRes.lines || 0) - 1}) ===`);
+          console.log(fileRes.text || '');
+          if (!fileRes.eof) {
+            console.log(`\n[... truncated, total bytes: ${fileRes.bytes}. Use --offset ${offset + limit} to continue ...]`);
+          }
+        }
+        break;
+      }
+
+      case 'terminals': {
+        const sessionId = positionals[0];
+        if (!sessionId) throw new Error('Usage: dsh-worker terminals <session-id>');
+        const term = await client.getTerminalInfo(sessionId);
+        if (values.json) {
+          console.log(JSON.stringify(term, null, 2));
+        } else {
+          console.log(`=== Terminals & Environment (${sessionId}) ===`);
+          console.log(`Workspace CWD: ${term.environment?.cwd || '-'}`);
+          console.log(`Available Shells: ${term.shells.map((s) => s.path).join(', ') || 'none'}`);
+          console.log(`Active Terminals: ${term.terminals.length}`);
+          for (const t of term.terminals) {
+            console.log(` - ID: ${t.id}, Title: ${t.title || 'untitled'}`);
+          }
+        }
+        break;
+      }
+
+      case 'kill-job': {
+        const sessionId = positionals[0];
+        const jobId = positionals[1];
+        if (!sessionId || !jobId) throw new Error('Usage: dsh-worker kill-job <session-id> <job-id>');
+        const res = await client.killJob(sessionId, jobId);
+        if (values.json) {
+          console.log(JSON.stringify(res, null, 2));
+        } else {
+          console.log(`✓ Job ${jobId} kill request outcome: ${res.outcome}`);
         }
         break;
       }
