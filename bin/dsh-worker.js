@@ -12,7 +12,9 @@ Usage:
   dsh-worker create-session <workspace-path> [--title <title>] [--json]
   dsh-worker upload <session-id> <file-path> [--name <custom-name>] [--json]
   dsh-worker prompt <session-id> <prompt-text> [--file <path>] [--wait] [--json]
-  dsh-worker run --workspace <path> --prompt <text> [--file <path>] [--wait] [--json]
+  dsh-worker run --workspace <path> --prompt <text> [--file <path>] [--wait] [--cancel-on-timeout] [--timeout <ms>] [--json]
+  dsh-worker wait <session-id> [--timeout <ms>] [--cancel-on-timeout] [--json]
+  dsh-worker cancel <session-id> [--json]
   dsh-worker status <session-id> [--json]
   dsh-worker details <session-id> [--json]
   dsh-worker logs <session-id> [--limit <n>] [--json]
@@ -22,14 +24,16 @@ Usage:
   dsh-worker kill-job <session-id> <job-id> [--json]
 
 Options:
-  --host        DSH Host (default: $DSH_HOST or http://localhost:53080)
-  --token       DSH Token (default: $DSH_TOKEN)
-  --json        Output raw JSON response
-  --wait        Wait for agent execution to complete
-  --file        Attach a local file to the session prompt
-  --offset      Line offset for reading files (default: 1)
-  --limit       Line limit for reading files or logs (default: 200/20)
-  --help, -h    Show this help message
+  --host                DSH Host (default: $DSH_HOST or http://localhost:53080)
+  --token               DSH Token (default: $DSH_TOKEN)
+  --json                Output raw JSON response
+  --wait                Wait for agent execution to complete
+  --file                Attach a local file to the session prompt
+  --timeout             Timeout in milliseconds for waiting (default: 600000)
+  --cancel-on-timeout   Cancel the remote DSH session turn if wait times out (default: false, keeps running)
+  --offset              Line offset for reading files (default: 1)
+  --limit               Line limit for reading files or logs (default: 200/20)
+  --help, -h            Show this help message
 `;
 
 async function main() {
@@ -54,6 +58,8 @@ async function main() {
       prompt: { type: 'string' },
       limit: { type: 'string' },
       offset: { type: 'string' },
+      timeout: { type: 'string' },
+      'cancel-on-timeout': { type: 'boolean', default: false },
       wait: { type: 'boolean', default: false },
       json: { type: 'boolean', default: false }
     },
@@ -146,6 +152,8 @@ async function main() {
 
         if (!values.json) console.log(`Waiting for session ${sessionId} to complete...`);
         const result = await client.waitForCompletion(sessionId, {
+          timeoutMs: values.timeout ? parseInt(values.timeout, 10) : undefined,
+          cancelOnTimeout: values['cancel-on-timeout'],
           onProgress: (p) => {
             if (!values.json) {
               process.stdout.write(`\r[Step ${p.step}] seq: ${p.seq}, tokens: ${p.decodeTokens || 0}... `);
@@ -195,6 +203,8 @@ async function main() {
 
         if (!values.json) console.log(`5. Worker agent is running...`);
         const result = await client.waitForCompletion(sessionId, {
+          timeoutMs: values.timeout ? parseInt(values.timeout, 10) : undefined,
+          cancelOnTimeout: values['cancel-on-timeout'],
           onProgress: (p) => {
             if (!values.json) {
               process.stdout.write(`\r[Step ${p.step}] tokens: ${p.decodeTokens || 0}... `);
@@ -211,6 +221,44 @@ async function main() {
           console.log(`Session ID: ${sessionId}`);
           console.log(`Title: ${result.title}`);
           console.log(`Turns: ${result.turns}, Steps: ${result.steps}, Tokens: ${result.tokens}`);
+        }
+        break;
+      }
+
+      case 'wait': {
+        const sessionId = positionals[0];
+        if (!sessionId) throw new Error('Usage: dsh-worker wait <session-id> [--timeout <ms>] [--cancel-on-timeout]');
+        if (!values.json) console.log(`Attaching to session ${sessionId} and waiting for completion...`);
+        const result = await client.waitForCompletion(sessionId, {
+          timeoutMs: values.timeout ? parseInt(values.timeout, 10) : undefined,
+          cancelOnTimeout: values['cancel-on-timeout'],
+          onProgress: (p) => {
+            if (!values.json) {
+              process.stdout.write(`\r[Step ${p.step}] seq: ${p.seq}, tokens: ${p.decodeTokens || 0}... `);
+            }
+          }
+        });
+
+        if (values.json) {
+          console.log(JSON.stringify(result, null, 2));
+        } else {
+          console.log('\n\n=== Agent Response ===');
+          console.log(result.response);
+          console.log('\n=== Stats ===');
+          console.log(`Title: ${result.title}`);
+          console.log(`Turns: ${result.turns}, Steps: ${result.steps}, Tokens: ${result.tokens}`);
+        }
+        break;
+      }
+
+      case 'cancel': {
+        const sessionId = positionals[0];
+        if (!sessionId) throw new Error('Usage: dsh-worker cancel <session-id>');
+        const res = await client.cancelSession(sessionId);
+        if (values.json) {
+          console.log(JSON.stringify(res, null, 2));
+        } else {
+          console.log(`✓ Active turn in session ${sessionId} cancelled: accepted = ${res.accepted}`);
         }
         break;
       }

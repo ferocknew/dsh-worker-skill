@@ -88,6 +88,15 @@ node bin/dsh-worker.js status <session-id>
 node bin/dsh-worker.js logs <session-id> --limit 30
 ```
 
+#### 断网重连、超时续查与取消（稳健性保证）
+```bash
+# 网络断开或等待超时后，凭同一 sessionId 挂载继续等待（杜绝重复生成任务）
+node bin/dsh-worker.js wait <session-id> --timeout 600000
+
+# 强制取消当前活跃 turn（释放远端算力）
+node bin/dsh-worker.js cancel <session-id>
+```
+
 ## 核心接口说明 (Node.js API)
 
 ```javascript
@@ -119,3 +128,4 @@ console.log(result.response);
 1. **网络与证书**：DSH 采用自签名证书，内部通信必须允许 `rejectUnauthorized: false`。
 2. **文件附件双轨安全**：通过 `fileUploads/upload` 上传附件是 DSH 原生的 staging 机制，会为 prompt 注入 `attachmentId`；若需要 DSH 内部直接以相对路径读取工作区物理文件，可辅助落盘至工作区挂载目录。
 3. **文件删除安全红线**：严禁在生产或持久化宿主机上私自执行未确认的 `rm` 破坏性操作。
+4. **防重跑与超时续查原则**：`waitForCompletion` 超时时远端任务依然在执行，上层必须保留 `sessionId` 并使用 `wait <sessionId>` 挂载重查，严禁直接当作失败重跑新会话，避免产生双重写冲突。若确实要丢弃，必须先调用 `cancel <sessionId>` 显式释放资源。

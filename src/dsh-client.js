@@ -4,6 +4,20 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { config } from './config.js';
 
+export class DSHTimeoutError extends Error {
+  constructor(message, context = {}) {
+    super(message);
+    this.name = 'DSHTimeoutError';
+    this.sessionId = context.sessionId;
+    this.timeoutMs = context.timeoutMs;
+    this.lastStep = context.lastStep || 0;
+    this.lastSeq = context.lastSeq || 0;
+    this.tokens = context.tokens || 0;
+    this.cancelled = Boolean(context.cancelled);
+    this.resumable = !context.cancelled;
+  }
+}
+
 export class DSHClient {
   constructor(options = {}) {
     this.host = (options.host || config.host).replace(/\/$/, '');
@@ -230,12 +244,15 @@ export class DSHClient {
     const {
       onProgress = null,
       timeoutMs = this.timeoutMs,
-      pollIntervalMs = this.pollIntervalMs
+      pollIntervalMs = this.pollIntervalMs,
+      cancelOnTimeout = false,
+      throwOnTimeout = true
     } = options;
 
     const startTime = Date.now();
     let lastSeq = 0;
     let lastStep = 0;
+    let lastStats = {};
 
     while (Date.now() - startTime < timeoutMs) {
       await new Promise((r) => setTimeout(r, pollIntervalMs));
@@ -243,6 +260,7 @@ export class DSHClient {
       const asOfSeq = proj.asOfSeq || 0;
       const vals = proj.values || {};
       const stats = vals.sessionStats || {};
+      lastStats = stats;
       const currentStep = stats.steps || 0;
       const running = vals.running !== false; // 如果为 false 说明当前 turn 完成
 
@@ -261,10 +279,10 @@ export class DSHClient {
         }
       }
 
-      // 如果 turnOutline 中已有完整的 response 且不再处于活跃调用中
+      // 如果 turnOutline 中已有完整的 response 说明当前 turn 已经完全 settle
       const outline = vals.turnOutline || [];
       const latestTurn = outline[outline.length - 1];
-      if (latestTurn && latestTurn.response && !running) {
+      if (latestTurn && typeof latestTurn.response === 'string' && latestTurn.response.length > 0) {
         // 获取完整的助手消息
         let fullText = latestTurn.response;
         try {
@@ -297,7 +315,45 @@ export class DSHClient {
       }
     }
 
-    throw new Error(`Session ${sessionId} timed out after ${timeoutMs}ms`);
+    let cancelled = false;
+    if (cancelOnTimeout) {
+      try {
+        await this.cancelSession(sessionId);
+        cancelled = true;
+      } catch (err) {
+        // ignore cancel failure
+      }
+    }
+
+    const timeoutDetails = {
+      status: 'timeout',
+      sessionId,
+      timeoutMs,
+      lastStep,
+      lastSeq,
+      tokens: lastStats.decodeTokens || 0,
+      cancelled,
+      resumable: !cancelled,
+      message: cancelled
+        ? `Session ${sessionId} timed out after ${timeoutMs}ms and was cancelled on remote DSH.`
+        : `Session ${sessionId} timed out after ${timeoutMs}ms. The agent is STILL RUNNING on remote DSH! Do not restart as a new session. Resume waiting with: dsh-worker wait ${sessionId}`
+    };
+
+    if (!throwOnTimeout) {
+      return timeoutDetails;
+    }
+
+    throw new DSHTimeoutError(timeoutDetails.message, timeoutDetails);
+  }
+
+  /**
+   * 取消指定会话的当前轮次执行
+   */
+  async cancelSession(sessionId) {
+    const res = await this.callRpc('session/cancel', {
+      request: { sessionId }
+    });
+    return res;
   }
 
   /**

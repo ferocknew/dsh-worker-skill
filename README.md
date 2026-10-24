@@ -69,7 +69,25 @@ dsh-worker kill-job <sessionId> <jobId>
 # 7. 查看会话状态与工具执行日志
 dsh-worker status <sessionId>
 dsh-worker logs <sessionId> --limit 20
+
+# 8. 断网重连、超时续查与防重复执行（Twitter 架构最佳实践）
+# 当网络波动中断或客户端等待超时，远端任务仍在执行，不要重复派发新任务，直接凭同一 sessionId 续查挂载：
+dsh-worker wait <sessionId> [--timeout 600000]
+
+# 若确需主动终止远端当前正在执行的轮次（释放计算资源）：
+dsh-worker cancel <sessionId>
+# 或在派发时声明超时即取消：
+dsh-worker run --workspace /workspace/code/repo --prompt "..." --wait --cancel-on-timeout
 ```
+
+---
+
+## 🛡️ 稳健性与断网容灾设计 (Robustness & Idempotency)
+
+1. **防重跑与幂等性保障**：只要 DSH 服务端已成功接单并分配 `sessionId`，无论客户端由于网络中断还是超时退出，客户端均**不会将超时判定为失败重跑**。上层保留 `sessionId`，即可随时通过 `dsh-worker wait <sessionId>` 无缝接回监听。
+2. **结构化 `DSHTimeoutError`**：SDK 抛出的错误对象包含 `sessionId`、`tokens`、`lastStep` 以及 `resumable: true` 标记，方便编排框架实现智能重试与状态挂载。
+3. **主动熔断与取消**：支持通过 `dsh-worker cancel <sessionId>` 或 `--cancel-on-timeout` 显式调用 RPC `session/cancel`，中止当前活跃 turn，不浪费 GPU/Tokens。
+4. **单元测试保障**：内置 `test/timeout_and_resume.test.js`，严格验证断网重连恢复、仅执行一份单据与超时取消。
 
 ---
 
