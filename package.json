@@ -1,0 +1,27 @@
+{
+  "name": "dsh-worker-skill",
+  "version": "1.0.0",
+  "description": "DeepSeek Harness (DSH) worker orchestrator and automation CLI for AI agents",
+  "type": "module",
+  "main": "src/dsh-client.js",
+  "bin": {
+    "dsh-worker": "bin/dsh-worker.js"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "keywords": [
+    "deepseek",
+    "deepseek-harness",
+    "dsh",
+    "ai-agent",
+    "worker",
+    "orchestrator",
+    "sub-agent"
+  ],
+  "author": "ferock",
+  "license": "MIT"
+}
