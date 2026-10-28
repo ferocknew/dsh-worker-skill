@@ -457,4 +457,75 @@ export class DSHClient {
       userQuestions: v.userQuestions || []
     };
   }
+
+  /**
+   * 获取目标模式（Goal Mode）状态
+   */
+  async getGoal(sessionId) {
+    const proj = await this.getProjections(sessionId);
+    return proj.values?.goal || null;
+  }
+
+  /**
+   * 设定目标并激活目标模式（持久化跨轮次自主推进）
+   */
+  async setGoal(sessionId, objective) {
+    if (!objective || typeof objective !== 'string' || !objective.trim()) {
+      throw new Error('Objective cannot be empty');
+    }
+    return this.sendPrompt(sessionId, `/goal ${objective.trim()}`);
+  }
+
+  /**
+   * 暂停目标模式执行
+   */
+  async pauseGoal(sessionId) {
+    return this.sendPrompt(sessionId, '/goal pause');
+  }
+
+  /**
+   * 恢复目标模式执行
+   */
+  async resumeGoal(sessionId) {
+    return this.sendPrompt(sessionId, '/goal resume');
+  }
+
+  /**
+   * 清除当前目标
+   */
+  async clearGoal(sessionId) {
+    return this.sendPrompt(sessionId, '/goal clear');
+  }
+
+  /**
+   * 修改当前目标内容
+   */
+  async editGoal(sessionId, objective) {
+    if (!objective || typeof objective !== 'string' || !objective.trim()) {
+      throw new Error('Objective cannot be empty');
+    }
+    return this.sendPrompt(sessionId, `/goal edit ${objective.trim()}`);
+  }
+
+  /**
+   * 获取计划模式（Plan Mode）状态
+   */
+  async getPlan(sessionId) {
+    const proj = await this.getProjections(sessionId);
+    return proj.values?.plan || null;
+  }
+
+  /**
+   * 控制计划模式：开启、关闭或携带指导指令启动
+   */
+  async setPlan(sessionId, actionOrPrompt = 'on') {
+    const trimmed = (actionOrPrompt || '').trim();
+    if (trimmed === 'off') {
+      return this.sendPrompt(sessionId, '/plan off');
+    }
+    if (!trimmed || trimmed === 'on') {
+      return this.sendPrompt(sessionId, '/plan');
+    }
+    return this.sendPrompt(sessionId, `/plan ${trimmed}`);
+  }
 }

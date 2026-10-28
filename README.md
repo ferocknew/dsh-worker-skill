@@ -60,17 +60,32 @@ dsh-worker cat <sessionId> src/main.py     # 读取代码文件（支持 --offse
 # 4. 会话全景透视（查看 Plan 规划步骤、Todos 清单、Token 详细消耗）
 dsh-worker details <sessionId>
 
-# 5. 终端环境与可用 Shell 感知
+# 5. 目标模式（Goal Mode）持久化自治调度
+# DSH 原生支持 Goal Round Driver，最多 256 轮跨轮次自治推进：
+dsh-worker goal <sessionId>                                # 查看当前目标、执行阶段与轮次进度
+dsh-worker goal <sessionId> "实现小红书关注状态缓存重构"      # 设定目标并启动自主推进循环
+dsh-worker goal <sessionId> pause                          # 暂停自动续行
+dsh-worker goal <sessionId> resume                         # 恢复续行推进
+dsh-worker goal <sessionId> clear                          # 清除当前目标
+dsh-worker goal <sessionId> edit "更新后的目标描述"          # 修改目标内容
+
+# 6. 计划模式（Plan Mode）设计先行
+dsh-worker plan <sessionId>                                # 查看当前计划模式状态
+dsh-worker plan <sessionId> on                             # 开启计划模式（调研与方案设计先行）
+dsh-worker plan <sessionId> off                            # 退出计划模式恢复自由执行
+dsh-worker plan <sessionId> "先做架构分析，给出方案"        # 附带指导启动计划模式
+
+# 7. 终端环境与可用 Shell 感知
 dsh-worker terminals <sessionId>
 
-# 6. 后台长任务强行终止（防死锁 / 释放资源）
+# 8. 后台长任务强行终止（防死锁 / 释放资源）
 dsh-worker kill-job <sessionId> <jobId>
 
-# 7. 查看会话状态与工具执行日志
+# 9. 查看会话状态与工具执行日志
 dsh-worker status <sessionId>
 dsh-worker logs <sessionId> --limit 20
 
-# 8. 断网重连、超时续查与防重复执行（Twitter 架构最佳实践）
+# 10. 断网重连、超时续查与防重复执行（Twitter 架构最佳实践）
 # 当网络波动中断或客户端等待超时，远端任务仍在执行，不要重复派发新任务，直接凭同一 sessionId 续查挂载：
 dsh-worker wait <sessionId> [--timeout 600000]
 

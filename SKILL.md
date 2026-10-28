@@ -68,6 +68,33 @@ node bin/dsh-worker.js cat <session-id> src/service/mem/entity.py --limit 100
 node bin/dsh-worker.js details <session-id>
 ```
 
+#### 目标模式（Goal Mode）持久化自治调度
+```bash
+# 查看目标状态与 256 轮进度
+node bin/dsh-worker.js goal <session-id>
+
+# 设定目标并开启多轮自主推进
+node bin/dsh-worker.js goal <session-id> "完成小红书关注模块接口改造与测试"
+
+# 暂停 / 恢复 / 清除 / 编辑
+node bin/dsh-worker.js goal <session-id> pause
+node bin/dsh-worker.js goal <session-id> resume
+node bin/dsh-worker.js goal <session-id> clear
+node bin/dsh-worker.js goal <session-id> edit "修正后的目标"
+```
+
+#### 计划模式（Plan Mode）设计先行
+```bash
+# 查看当前计划模式状态
+node bin/dsh-worker.js plan <session-id>
+
+# 开启计划模式（要求先调研与设计计划书，等待审批）
+node bin/dsh-worker.js plan <session-id> on
+
+# 关闭计划模式
+node bin/dsh-worker.js plan <session-id> off
+```
+
 #### 查询终端环境与可用 Shell
 ```bash
 node bin/dsh-worker.js terminals <session-id>

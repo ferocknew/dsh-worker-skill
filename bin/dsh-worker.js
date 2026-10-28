@@ -22,6 +22,8 @@ Usage:
   dsh-worker cat <session-id> <file-path> [--offset <n>] [--limit <n>] [--json]
   dsh-worker terminals <session-id> [--json]
   dsh-worker kill-job <session-id> <job-id> [--json]
+  dsh-worker goal <session-id> [action|objective] [--wait] [--json]
+  dsh-worker plan <session-id> [on|off|<prompt>] [--wait] [--json]
 
 Options:
   --host                DSH Host (default: $DSH_HOST or http://localhost:53080)
@@ -401,6 +403,144 @@ async function main() {
             } else if (evt.type === 'assistant/message') {
               console.log(`🤖 [Assistant Step ${d.step}]`);
             }
+          }
+        }
+        break;
+      }
+
+      case 'goal': {
+        const sessionId = positionals[0];
+        if (!sessionId) throw new Error('Usage: dsh-worker goal <session-id> [action|objective] [--wait]');
+
+        const subAction = positionals[1];
+        const remainingArgs = positionals.slice(2).join(' ').trim();
+        const fullArg = positionals.slice(1).join(' ').trim();
+
+        // 1. 无参数或显式 status：查询目标状态
+        if (!fullArg || fullArg === 'status') {
+          const goal = await client.getGoal(sessionId);
+          if (values.json) {
+            console.log(JSON.stringify(goal, null, 2));
+          } else if (!goal) {
+            console.log(`ℹ️ No active goal for session ${sessionId}.`);
+            console.log(`  Set a goal with: dsh-worker goal ${sessionId} "<objective>"`);
+          } else {
+            const phaseIcons = {
+              active: '🟢 Active (自主运行中)',
+              paused: '⏸️ Paused (已暂停)',
+              blocked: '🚫 Blocked (阻塞)',
+              complete: '✅ Complete (已达成)'
+            };
+            console.log(`=== Goal Status: ${sessionId} ===`);
+            console.log(`Objective: ${goal.objective}`);
+            console.log(`Phase: ${phaseIcons[goal.phase] || goal.phase}`);
+            console.log(`Rounds: ${goal.roundsStarted || 0} / ${goal.maxGoalRounds || 256}`);
+            if (goal.blockerReason) {
+              console.log(`Blocker: ${goal.blockerReason}`);
+            }
+            if (goal.revision) {
+              console.log(`Revision: ${goal.revision}`);
+            }
+          }
+          break;
+        }
+
+        let res;
+        let actionDesc = '';
+        if (subAction === 'pause') {
+          res = await client.pauseGoal(sessionId);
+          actionDesc = 'Goal paused';
+        } else if (subAction === 'resume') {
+          res = await client.resumeGoal(sessionId);
+          actionDesc = 'Goal resumed';
+        } else if (subAction === 'clear') {
+          res = await client.clearGoal(sessionId);
+          actionDesc = 'Goal cleared';
+        } else if (subAction === 'edit') {
+          if (!remainingArgs) throw new Error('Usage: dsh-worker goal <session-id> edit <new-objective>');
+          res = await client.editGoal(sessionId, remainingArgs);
+          actionDesc = `Goal updated: ${remainingArgs}`;
+        } else if (subAction === 'set') {
+          if (!remainingArgs) throw new Error('Usage: dsh-worker goal <session-id> set <objective>');
+          res = await client.setGoal(sessionId, remainingArgs);
+          actionDesc = `Goal set: ${remainingArgs}`;
+        } else {
+          // 直接将后续所有字符当做目标指令
+          res = await client.setGoal(sessionId, fullArg);
+          actionDesc = `Goal set: ${fullArg}`;
+        }
+
+        if (values.json && !values.wait) {
+          console.log(JSON.stringify(res, null, 2));
+        } else if (!values.wait) {
+          console.log(`✓ ${actionDesc} for session ${sessionId}. Accepted: ${res?.accepted}`);
+        }
+
+        if (values.wait) {
+          if (!values.json) console.log(`Waiting for goal turn completion on session ${sessionId}...`);
+          const timeoutMs = values.timeout ? parseInt(values.timeout, 10) : undefined;
+          const turnRes = await client.waitForCompletion(sessionId, {
+            timeoutMs,
+            cancelOnTimeout: values['cancel-on-timeout'],
+            onProgress: (p) => {
+              if (!values.json) {
+                console.log(`[Step ${p.step}] Turn ${p.turns} (seq: ${p.seq}, decode tokens: ${p.decodeTokens || 0})`);
+              }
+            }
+          });
+          if (values.json) {
+            console.log(JSON.stringify(turnRes, null, 2));
+          } else {
+            console.log('\n=== Goal Execution Result ===');
+            console.log(turnRes.text);
+          }
+        }
+        break;
+      }
+
+      case 'plan': {
+        const sessionId = positionals[0];
+        if (!sessionId) throw new Error('Usage: dsh-worker plan <session-id> [on|off|<prompt>] [--wait]');
+
+        const planAction = positionals.slice(1).join(' ').trim();
+        if (!planAction || planAction === 'status') {
+          const plan = await client.getPlan(sessionId);
+          if (values.json) {
+            console.log(JSON.stringify(plan, null, 2));
+          } else if (!plan) {
+            console.log(`ℹ️ Plan mode is not active for session ${sessionId}.`);
+            console.log(`  Enable with: dsh-worker plan ${sessionId} on`);
+          } else {
+            console.log(`=== Plan Mode Status: ${sessionId} ===`);
+            console.log(`State: ${JSON.stringify(plan)}`);
+          }
+          break;
+        }
+
+        const res = await client.setPlan(sessionId, planAction);
+        if (values.json && !values.wait) {
+          console.log(JSON.stringify(res, null, 2));
+        } else if (!values.wait) {
+          console.log(`✓ Plan command dispatched to session ${sessionId}. Accepted: ${res?.accepted}`);
+        }
+
+        if (values.wait) {
+          if (!values.json) console.log(`Waiting for plan response on session ${sessionId}...`);
+          const timeoutMs = values.timeout ? parseInt(values.timeout, 10) : undefined;
+          const turnRes = await client.waitForCompletion(sessionId, {
+            timeoutMs,
+            cancelOnTimeout: values['cancel-on-timeout'],
+            onProgress: (p) => {
+              if (!values.json) {
+                console.log(`[Step ${p.step}] Turn ${p.turns} (seq: ${p.seq})`);
+              }
+            }
+          });
+          if (values.json) {
+            console.log(JSON.stringify(turnRes, null, 2));
+          } else {
+            console.log('\n=== Plan Result ===');
+            console.log(turnRes.text);
           }
         }
         break;
